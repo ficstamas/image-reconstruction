@@ -3,49 +3,67 @@ import random
 from skimage.transform.radon_transform import radon
 from skimage.feature import local_binary_pattern
 from skimage import draw
+import cv2 as cv
+import math
+import copy
 
 # TODO test the code
 # TODO \lambda * g(x) prior information to cost function
 # TODO draw objects on self.updated_image (image) 💩
 # TODO rest of SA (acceptance, loss)
 
+
 class SA:
-    def __init__(self, sinogram: np.ndarray, thetas, N=5):
-        self.image = sinogram
-        self.updated_image = np.zeros([sinogram.shape[0], sinogram.shape[0]])
+    def __init__(self, sinogram: np.ndarray, thetas, image_shape=[32, 32], N=5, l=0.1, t_0=500, t_n=50):
+        self.sinogram = sinogram
+        self.image_shape = image_shape
+
+        # images
+        self.optimal = np.zeros(image_shape)
+        self.updated_image = np.zeros(image_shape)
+
+        # objects on image
         self.objects = {}
+        self.optimal_objects = {}
+
+        # hyperparameters
         self.thetas = thetas
-        self._i = 0
-        self.t_0 = 0
         self.N = N
+        self.l = l
+        self.t_0 = t_0
+        self.t_n = t_n
+
+        # other params
+        self._i = 0
         self.n = 1
+        self.c = math.inf
+        self.t = t_0
 
     def add(self):
-        self.objects[self._i] = [random.randint(0, self.image.shape[0]),    # x
-                                 random.randint(0, self.image.shape[0]),    # y
-                                 random.randint(1, self.image.shape[0]//2)] # r
+        self.objects[self._i] = [random.randint(0, self.image_shape[0]),         # x
+                                 random.randint(0, self.image_shape[0]),         # y
+                                 random.randint(1, self.image_shape[0] // 2)]         # r
         self._i += 1
-        self.draw()
 
     def remove(self, i):
         del self.objects[i]
-        self.draw()
 
     def resize(self, i, r):
         self.objects[i][2] += r
-        self.draw()
 
     def move(self, i, x, y):
         self.objects[i][1] += y
         self.objects[i][0] += x
-        self.draw()
 
-    def temperature_change(self, new_t):
-        return self.t_0 - self.n * ((self.t_0 - new_t)/self.N)
+    def temperature_change(self):
+        self.t = self.t_0 - self.n * ((self.t_0 - self.t_n)/self.N)
 
     def generation(self):
+        self.objects = copy.deepcopy(self.optimal_objects)
+        self.updated_image = copy.deepcopy(self.optimal)
         if self.objects.__len__() == 0:
             self.add()
+            self.draw()
             return
         r = random.randint(1, 100)
         if r <= 10:
@@ -58,11 +76,31 @@ class SA:
         else:
             self.move(random.choice([x for x in self.objects]),
                       random.randint(-5, 5), random.randint(-5, 5))
+        self.draw()
 
     def cost_function(self):
         # projections
-        projections = radon(self.updated_image, theta=self.thetas)
-        error = np.linalg.norm(projections - self.image)
+        projections = radon(self.updated_image, theta=self.thetas, circle=False)
+        regularization = np.mean(self.lbp(self.updated_image)) * self.l
+        error = np.power(np.linalg.norm(projections - self.sinogram), 2) + regularization
+        return error
+
+    def iteration(self):
+        for i in range(self.N):
+            print(self.c)
+            self.n = i
+            self.generation()
+            new_c = self.cost_function()
+            if new_c < self.c:
+                self.optimal_objects = copy.deepcopy(self.objects)
+                self.optimal = copy.deepcopy(self.updated_image)
+                self.c = new_c
+                continue
+            elif random.random() < np.exp(-np.abs(self.c-new_c)*self.t):
+                self.optimal_objects = copy.deepcopy(self.objects)
+                self.optimal = copy.deepcopy(self.updated_image)
+                self.c = new_c
+                continue
 
     def draw(self):
         for i in self.objects.keys():
@@ -71,13 +109,20 @@ class SA:
                                shape=self.updated_image.shape)
             self.updated_image[rr, cc] = 255
 
-    def lbp(self, image, radius, method):
+    def lbp(self, image, radius=1, method="uniform"):
         """
-
         :param image: gray scale image
         :param radius: maximum distance from the kernel center point
         :param method: can be 'default', 'ror', 'uniform', 'nri_uniform', 'var'
         :return: local binary pattern matrix
         """
         n_points = 8*radius
-        return local_binary_pattern(image=image,P=n_points,R=radius,method=method)
+        return local_binary_pattern(image=image, P=n_points, R=radius, method=method)
+
+
+if __name__ == "__main__":
+    img = cv.imread(f"./images/cropped/5488.png", cv.IMREAD_GRAYSCALE).astype(np.bool).astype(np.uint8)
+    img[img == 1] = 255
+    sinogram = radon(img, theta=[0, 30, 60, 90, 120, 150], circle=False)
+    sa = SA(sinogram=sinogram, thetas=[0, 30, 60, 90, 120, 150], N=1000)
+    sa.iteration()
