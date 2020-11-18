@@ -1,6 +1,7 @@
 import numpy as np
 import random
 from skimage.transform.radon_transform import radon
+from skimage.feature import local_binary_pattern
 from skimage import draw
 
 # TODO test the code
@@ -66,6 +67,17 @@ class SA:
     def draw(self):
         for i in self.objects.keys():
             rr, cc = draw.disk(center=(self.objects[i][0], self.objects[i][1]),
-                               radius=self.objects[i][3],
+                               radius=self.objects[i][2],
                                shape=self.updated_image.shape)
             self.updated_image[rr, cc] = 255
+
+    def lbp(self, image, radius, method):
+        """
+
+        :param image: gray scale image
+        :param radius: maximum distance from the kernel center point
+        :param method: can be 'default', 'ror', 'uniform', 'nri_uniform', 'var'
+        :return: local binary pattern matrix
+        """
+        n_points = 8*radius
+        return local_binary_pattern(image=image,P=n_points,R=radius,method=method)
