@@ -6,6 +6,9 @@ from skimage import draw
 import cv2 as cv
 import math
 import copy
+import tqdm
+import matplotlib.pyplot as plt
+
 
 # TODO test the code
 # TODO \lambda * g(x) prior information to cost function
@@ -29,7 +32,7 @@ class SA:
         # hyperparameters
         self.thetas = thetas
         self.N = N
-        self.l = l
+        self.lamb = l
         self.t_0 = t_0
         self.t_n = t_n
 
@@ -42,7 +45,7 @@ class SA:
     def add(self):
         self.objects[self._i] = [random.randint(0, self.image_shape[0]),         # x
                                  random.randint(0, self.image_shape[0]),         # y
-                                 random.randint(1, self.image_shape[0] // 2)]         # r
+                                 random.randint(1, self.image_shape[0] // 10)]         # r
         self._i += 1
 
     def remove(self, i):
@@ -65,12 +68,12 @@ class SA:
             self.add()
             self.draw()
             return
-        r = random.randint(1, 100)
-        if r <= 10:
+        r = random.randint(0, 100)
+        if r <= 5:
             self.add()
-        elif 10 < r <= 15:
+        elif 5 < r <= 10:
             self.remove(random.choice([x for x in self.objects]))
-        elif 15 < r <= 60:
+        elif 10 < r <= 45:
             self.resize(random.choice([x for x in self.objects]),
                         random.randint(-5, 5))
         else:
@@ -81,13 +84,14 @@ class SA:
     def cost_function(self):
         # projections
         projections = radon(self.updated_image, theta=self.thetas, circle=False)
-        regularization = np.mean(self.lbp(self.updated_image)) * self.l
+        regularization = np.power(np.linalg.norm(projections), 2) * self.lamb
         error = np.power(np.linalg.norm(projections - self.sinogram), 2) + regularization
         return error
 
     def iteration(self):
-        for i in range(self.N):
-            print(self.c)
+        for i in tqdm.trange(self.N):
+            if self.t == self.t_n:
+                break
             self.n = i
             self.generation()
             new_c = self.cost_function()
@@ -95,12 +99,18 @@ class SA:
                 self.optimal_objects = copy.deepcopy(self.objects)
                 self.optimal = copy.deepcopy(self.updated_image)
                 self.c = new_c
+                self.temperature_change()
+                # print(self.c, self.t)
                 continue
-            elif random.random() < np.exp(-np.abs(self.c-new_c)*self.t):
-                self.optimal_objects = copy.deepcopy(self.objects)
-                self.optimal = copy.deepcopy(self.updated_image)
-                self.c = new_c
-                continue
+            # prob = np.exp(-np.abs(self.c-new_c)/self.t)
+            # r = random.random()
+            # if r < prob:
+            #     print(self.c-new_c, prob, r)
+            #     self.optimal_objects = copy.deepcopy(self.objects)
+            #     self.optimal = copy.deepcopy(self.updated_image)
+            #     self.c = new_c
+            #     self.temperature_change()
+            #     continue
 
     def draw(self):
         for i in self.objects.keys():
@@ -121,8 +131,15 @@ class SA:
 
 
 if __name__ == "__main__":
+    random.seed(0)
+    np.random.seed(0)
+
     img = cv.imread(f"./images/cropped/5488.png", cv.IMREAD_GRAYSCALE).astype(np.bool).astype(np.uint8)
     img[img == 1] = 255
     sinogram = radon(img, theta=[0, 30, 60, 90, 120, 150], circle=False)
-    sa = SA(sinogram=sinogram, thetas=[0, 30, 60, 90, 120, 150], N=1000)
+    sa = SA(sinogram=sinogram, thetas=[0, 30, 60, 90, 120, 150], N=1000000)
     sa.iteration()
+
+    cv.imshow("Output", cv.resize(sa.optimal, (32*10, 32*10)))
+    cv.imshow("Original", cv.resize(img, (32*10, 32*10)))
+    cv.waitKey(0)
