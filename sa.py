@@ -1,7 +1,7 @@
 import numpy as np
 import random
 from skimage.transform.radon_transform import radon
-
+from skimage import draw
 
 # TODO test the code
 # TODO \lambda * g(x) prior information to cost function
@@ -24,16 +24,20 @@ class SA:
                                  random.randint(0, self.image.shape[0]),    # y
                                  random.randint(1, self.image.shape[0]//2)] # r
         self._i += 1
+        self.draw()
 
     def remove(self, i):
         del self.objects[i]
+        self.draw()
 
     def resize(self, i, r):
         self.objects[i][2] += r
+        self.draw()
 
     def move(self, i, x, y):
         self.objects[i][1] += y
         self.objects[i][0] += x
+        self.draw()
 
     def temperature_change(self, new_t):
         return self.t_0 - self.n * ((self.t_0 - new_t)/self.N)
@@ -58,3 +62,10 @@ class SA:
         # projections
         projections = radon(self.updated_image, theta=self.thetas)
         error = np.linalg.norm(projections - self.image)
+
+    def draw(self):
+        for i in self.objects.keys():
+            rr, cc = draw.disk(center=(self.objects[i][0], self.objects[i][1]),
+                               radius=self.objects[i][3],
+                               shape=self.updated_image.shape)
+            self.updated_image[rr, cc] = 255
