@@ -8,12 +8,14 @@ import math
 import copy
 import tqdm
 import matplotlib.pyplot as plt
+import multiprocessing as mp
+from queue import Empty
+import json
+import logging
 
-
-# TODO test the code
-# TODO \lambda * g(x) prior information to cost function
-# TODO draw objects on self.updated_image (image) 💩
-# TODO rest of SA (acceptance, loss)
+logging.basicConfig(level=logging.DEBUG,
+                    format='%(asctime)s - %(levelname)s - %(message)s',
+                    datefmt='%d-%b-%y %H:%M:%S')
 
 
 class SA:
@@ -41,6 +43,7 @@ class SA:
         self.n = 1
         self.c = math.inf
         self.t = t_0
+        self.cost_change = []
 
     def add(self):
         self.objects[self._i] = [random.randint(0, self.image_shape[0]),         # x
@@ -64,53 +67,45 @@ class SA:
     def generation(self):
         self.objects = copy.deepcopy(self.optimal_objects)
         self.updated_image = copy.deepcopy(self.optimal)
-        if self.objects.__len__() == 0:
-            self.add()
-            self.draw()
-            return
-        r = random.randint(0, 100)
-        if r <= 5:
-            self.add()
-        elif 5 < r <= 10:
-            self.remove(random.choice([x for x in self.objects]))
-        elif 10 < r <= 45:
-            self.resize(random.choice([x for x in self.objects]),
-                        random.randint(-5, 5))
-        else:
-            self.move(random.choice([x for x in self.objects]),
-                      random.randint(-5, 5), random.randint(-5, 5))
-        self.draw()
+        x = random.randint(0, self.updated_image.shape[0]-1)
+        y = random.randint(0, self.updated_image.shape[0]-1)
+        self.updated_image[x, y] = 255 if self.updated_image[x, y] == 0 else 0
 
     def cost_function(self):
         # projections
-        projections = radon(self.updated_image, theta=self.thetas, circle=False)
-        regularization = np.power(np.linalg.norm(projections), 2) * self.lamb
-        error = np.power(np.linalg.norm(projections - self.sinogram), 2) + regularization
+        projections = radon(self.updated_image, theta=self.thetas, circle=False, preserve_range=True)
+        error = np.sqrt(np.power(np.linalg.norm(projections - self.sinogram), 2)/(projections.shape[0] * projections.shape[1]))
         return error
 
     def iteration(self):
-        for i in tqdm.trange(self.N):
+        for i in range(self.N):
             if self.t == self.t_n:
                 break
             self.n = i
             self.generation()
             new_c = self.cost_function()
-            if new_c < self.c:
+            delta = new_c-self.c
+            if delta < 0:
                 self.optimal_objects = copy.deepcopy(self.objects)
                 self.optimal = copy.deepcopy(self.updated_image)
                 self.c = new_c
+                self.cost_change.append(self.c)
                 self.temperature_change()
                 # print(self.c, self.t)
                 continue
-            # prob = np.exp(-np.abs(self.c-new_c)/self.t)
-            # r = random.random()
-            # if r < prob:
-            #     print(self.c-new_c, prob, r)
-            #     self.optimal_objects = copy.deepcopy(self.objects)
-            #     self.optimal = copy.deepcopy(self.updated_image)
-            #     self.c = new_c
-            #     self.temperature_change()
-            #     continue
+            if delta == 0:
+                continue
+            prob = np.exp(-delta/self.t)
+            r = random.random()
+            if r < prob:
+                # print(delta, prob, r)
+                self.optimal_objects = copy.deepcopy(self.objects)
+                self.optimal = copy.deepcopy(self.updated_image)
+                self.c = new_c
+                self.cost_change.append(self.c)
+                self.temperature_change()
+                continue
+            self.temperature_change()
 
     def draw(self):
         for i in self.objects.keys():
@@ -130,16 +125,94 @@ class SA:
         return local_binary_pattern(image=image, P=n_points, R=radius, method=method)
 
 
+def rme(image, reconstructed):
+    return np.sum(np.abs(reconstructed - image)) / np.sum(image)
+
+
+def process(task_queue: mp.Queue, progress_queue: mp.Queue):
+    while True:
+        try:
+            file: str
+            file, seed, k, n, t_0 = task_queue.get(block=True, timeout=0.5)
+            # logging.info(f"File: {file}, seed: {seed}, k: {k}, n: {n}, t0: {t_0}")
+        except Empty:
+            break
+        random.seed(seed)
+        np.random.seed(seed)
+        theta = np.arange(0, k)
+        img = cv.imread(file, cv.IMREAD_GRAYSCALE).astype(np.bool).astype(np.uint8)
+        img[img == 1] = 255
+        sinogram = radon(img, theta=theta, circle=False)
+        sa = SA(sinogram=sinogram, thetas=theta, N=n, t_0=t_0, t_n=0)
+        sa.iteration()
+
+        # images
+        original_image = img
+        original_sinogram = sinogram
+        output_image = sa.optimal
+        difference_image = np.abs(original_image-sa.optimal)
+
+        # scores
+        last_cost = sa.c
+        cost_change = sa.cost_change
+        rme_score = rme(img, sa.optimal)
+        stats = {"cost_change": cost_change, "rme": rme_score}  # just json.dump it into "path.../<stats_filename>"
+        # output files
+        # TODO put them in a directory like "./data/sa/<filename>"
+        stats_filename = f"stats_{file[2:-4].replace('/', '-')}_seed-{seed}_thetastep-{k}_iter{n}_temp-{t_0}.json"
+        plot_filename = f"plot_{file[2:-4].replace('/', '-')}_seed-{seed}_thetastep-{k}_iter{n}_temp-{t_0}.pdf"
+
+        # TODO plot original image, sinogram, output image, difference image
+        # TODO Save everything in file
+
+        # This handles the progress bar
+        progress_queue.put(1)
+
+
+def _progress_bar(queue: mp.Queue, total):
+    progress = tqdm.tqdm(total=total, unit='dim', desc=f'Progress\t')
+    while True:
+        try:
+            _ = queue.get(True, 0.5)
+            progress.n += 1
+            progress.update(0)
+            if progress.n == total:
+                break
+        except Empty:
+            continue
+
+
 if __name__ == "__main__":
-    random.seed(0)
-    np.random.seed(0)
+    mp.freeze_support()
 
-    img = cv.imread(f"./images/cropped/5488.png", cv.IMREAD_GRAYSCALE).astype(np.bool).astype(np.uint8)
-    img[img == 1] = 255
-    sinogram = radon(img, theta=[0, 30, 60, 90, 120, 150], circle=False)
-    sa = SA(sinogram=sinogram, thetas=[0, 30, 60, 90, 120, 150], N=1000000)
-    sa.iteration()
+    task_manager = mp.Manager()
+    task_queue = task_manager.Queue()
+    progress_queue = task_manager.Queue()
 
-    cv.imshow("Output", cv.resize(sa.optimal, (32*10, 32*10)))
-    cv.imshow("Original", cv.resize(img, (32*10, 32*10)))
-    cv.waitKey(0)
+    # parameters
+    files = ["./images/cropped/5494.png", "./images/cropped/5509.png", "./images/cropped/5490.png"]
+    seeds = [0, 1, 2, 3, 4]
+    thetas = [1, 10, 30]
+    ns = [10, 100, 1000, 5000, 10000, 50000, 100000]
+    t0s = [1, 5, 10, 50, 100, 250, 500]
+
+    inputs = []
+
+    # preparing tasks
+    for file in files:
+        for seed in seeds:
+            for k in thetas:
+                for n in ns:
+                    for t0 in t0s:
+                        task_queue.put((file, seed, k, n, t0))
+                        inputs.append([task_queue, progress_queue])
+
+    progress = mp.Process(target=_progress_bar, args=(progress_queue, task_queue.qsize()))
+    progress.start()
+
+    pool = mp.Pool(processes=4)
+    with pool as p:
+        _ = p.starmap(process, inputs)
+
+    progress.join()
+
