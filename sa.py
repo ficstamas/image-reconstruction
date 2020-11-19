@@ -5,6 +5,7 @@ from skimage.feature import local_binary_pattern
 from skimage import draw
 import cv2 as cv
 import math
+import os
 import copy
 import tqdm
 import matplotlib.pyplot as plt
@@ -143,6 +144,7 @@ def process(task_queue: mp.Queue, progress_queue: mp.Queue):
         img = cv.imread(file, cv.IMREAD_GRAYSCALE).astype(np.bool).astype(np.uint8)
         img[img == 1] = 255
         sinogram = radon(img, theta=theta, circle=False)
+
         sa = SA(sinogram=sinogram, thetas=theta, N=n, t_0=t_0, t_n=0)
         sa.iteration()
 
@@ -159,12 +161,40 @@ def process(task_queue: mp.Queue, progress_queue: mp.Queue):
         stats = {"cost_change": cost_change, "rme": rme_score}  # just json.dump it into "path.../<stats_filename>"
         # output files
         # TODO put them in a directory like "./data/sa/<filename>"
-        stats_filename = f"stats_{file[2:-4].replace('/', '-')}_seed-{seed}_thetastep-{k}_iter{n}_temp-{t_0}.json"
-        plot_filename = f"plot_{file[2:-4].replace('/', '-')}_seed-{seed}_thetastep-{k}_iter{n}_temp-{t_0}.pdf"
+        path_stats = "sa/results/file_"+str(file[2:-4].replace('/', '-'))+"/stats"
+        path_plots = "sa/results/file_"+str(file[2:-4].replace('/', '-'))+"/plots"
 
+        if not os.path.exists(path_stats):
+            os.makedirs(path_stats)
+        if not os.path.exists(path_plots):
+            os.makedirs(path_plots)
+
+        stats_filename = f"stats_{file[2:-4].replace('/', '-')}_seed-{seed}_thetastep-{k}_iter-{n}_temp-{t_0}.json"
+        plot_filename = f"plot_{file[2:-4].replace('/', '-')}_seed-{seed}_thetastep-{k}_iter-{n}_temp-{t_0}.pdf"
+
+        json_object = json.dumps(stats, indent=2)
+        with open(os.path.join(path_stats,stats_filename),"w") as outfile:
+            outfile.write(json_object)
+            outfile.close()
         # TODO plot original image, sinogram, output image, difference image
         # TODO Save everything in file
 
+        fig, axs = plt.subplots(3, 4)
+        fig.set_size_inches(6, 6)
+        axs.flatten()[0].set_title("Original")
+        axs[0][0].imshow(original_image, cmap=plt.cm.Greys_r)
+
+        axs.flatten()[1].set_title("Radon transform\n(Sinogram)")
+        axs[0][1].imshow(original_sinogram, cmap=plt.cm.Greys_r, extent=(0, 180, 0, original_sinogram.shape[0]), aspect='auto')
+
+        axs.flatten()[2].set_title("Output (SA)")
+        axs[0][2].imshow(output_image, cmap=plt.cm.Greys_r)
+
+        axs.flatten()[3].set_title("Difference")
+        axs[0][3].imshow(difference_image, cmap=plt.cm.Greys_r)
+
+        fig.tight_layout()
+        fig.savefig(os.path.join(path_plots,plot_filename),bbox_inches="tight")
         # This handles the progress bar
         progress_queue.put(1)
 
@@ -191,6 +221,7 @@ if __name__ == "__main__":
 
     # parameters
     files = ["./images/cropped/5494.png", "./images/cropped/5509.png", "./images/cropped/5490.png"]
+
     seeds = [0, 1, 2, 3, 4]
     thetas = [1, 10, 30]
     ns = [10, 100, 1000, 5000, 10000, 50000, 100000]
