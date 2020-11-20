@@ -140,7 +140,7 @@ def process(task_queue: mp.Queue, progress_queue: mp.Queue):
             break
         random.seed(seed)
         np.random.seed(seed)
-        theta = np.arange(0, k)
+        theta = np.arange(0, 180, k)
         img = cv.imread(file, cv.IMREAD_GRAYSCALE).astype(np.bool).astype(np.uint8)
         img[img == 1] = 255
         sinogram = radon(img, theta=theta, circle=False)
@@ -178,20 +178,20 @@ def process(task_queue: mp.Queue, progress_queue: mp.Queue):
             outfile.close()
         # TODO plot original image, sinogram, output image, difference image
         # TODO Save everything in file
-
-        fig, axs = plt.subplots(3, 4)
-        fig.set_size_inches(6, 6)
+        #original_sinogram = cv.resize(original_sinogram,(original_sinogram.shape[0],original_sinogram.shape[0]))
+        fig, axs = plt.subplots(1, 4,constrained_layout=True)
+        fig.set_size_inches(16, 4)
         axs.flatten()[0].set_title("Original")
-        axs[0][0].imshow(original_image, cmap=plt.cm.Greys_r)
+        axs[0].imshow(original_image, cmap=plt.cm.Greys_r, aspect='auto')
 
         axs.flatten()[1].set_title("Radon transform\n(Sinogram)")
-        axs[0][1].imshow(original_sinogram, cmap=plt.cm.Greys_r, extent=(0, 180, 0, original_sinogram.shape[0]), aspect='auto')
+        axs[1].imshow(original_sinogram, cmap=plt.cm.Greys_r, extent=(0, 180, 0, original_sinogram.shape[0]),aspect='auto')
 
         axs.flatten()[2].set_title("Output (SA)")
-        axs[0][2].imshow(output_image, cmap=plt.cm.Greys_r)
+        axs[2].imshow(output_image, cmap=plt.cm.Greys_r, aspect='auto')
 
         axs.flatten()[3].set_title("Difference")
-        axs[0][3].imshow(difference_image, cmap=plt.cm.Greys_r)
+        axs[3].imshow(difference_image, cmap=plt.cm.Greys_r, aspect='auto')
 
         fig.tight_layout()
         fig.savefig(os.path.join(path_plots,plot_filename),bbox_inches="tight")
@@ -226,6 +226,7 @@ if __name__ == "__main__":
     thetas = [1, 10, 30]
     ns = [10, 100, 1000, 5000, 10000, 50000, 100000]
     t0s = [1, 5, 10, 50, 100, 250, 500]
+
 
     inputs = []
 
