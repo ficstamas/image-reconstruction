@@ -14,6 +14,7 @@ from queue import Empty
 import json
 import logging
 
+logging.getLogger("matplotlib").setLevel(logging.WARNING)
 logging.basicConfig(level=logging.DEBUG,
                     format='%(asctime)s - %(levelname)s - %(message)s',
                     datefmt='%d-%b-%y %H:%M:%S')
@@ -143,7 +144,7 @@ def process(task_queue: mp.Queue, progress_queue: mp.Queue):
         theta = np.arange(0, 180, k)
         img = cv.imread(file, cv.IMREAD_GRAYSCALE).astype(np.bool).astype(np.uint8)
         img[img == 1] = 255
-        sinogram = radon(img, theta=theta, circle=False)
+        sinogram = radon(img, theta=theta, circle=False, preserve_range=True)
 
         sa = SA(sinogram=sinogram, thetas=theta, N=n, t_0=t_0, t_n=0)
         sa.iteration()
@@ -179,7 +180,7 @@ def process(task_queue: mp.Queue, progress_queue: mp.Queue):
         # TODO plot original image, sinogram, output image, difference image
         # TODO Save everything in file
         #original_sinogram = cv.resize(original_sinogram,(original_sinogram.shape[0],original_sinogram.shape[0]))
-        fig, axs = plt.subplots(1, 4,constrained_layout=True)
+        fig, axs = plt.subplots(1, 4)
         fig.set_size_inches(16, 4)
         axs.flatten()[0].set_title("Original")
         axs[0].imshow(original_image, cmap=plt.cm.Greys_r, aspect='auto')
