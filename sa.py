@@ -171,8 +171,8 @@ def process(task_queue: mp.Queue, progress_queue: mp.Queue):
         if not os.path.exists(path_plots):
             os.makedirs(path_plots)
 
-        stats_filename = f"stats_{file[2:-4].replace('/', '-')}_seed-{seed}_thetastep-{k}_iter-{n}_temp-{t_0}.json"
-        plot_filename = f"plot_{file[2:-4].replace('/', '-')}_seed-{seed}_thetastep-{k}_iter-{n}_temp-{t_0}.pdf"
+        stats_filename = f"stats_{file[2:-4].replace('/', '-')}_seed-{seed}_thetastep-{k}_iter-{n}_lamb-{l}_temp-{t_0}.json"
+        plot_filename = f"plot_{file[2:-4].replace('/', '-')}_seed-{seed}_thetastep-{k}_iter-{n}_lamb-{l}_temp-{t_0}.pdf"
 
         json_object = json.dumps(stats, indent=2)
         with open(os.path.join(path_stats,stats_filename),"w") as outfile:
