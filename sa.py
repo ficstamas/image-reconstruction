@@ -77,6 +77,7 @@ class SA:
         # projections
         projections = radon(self.updated_image, theta=self.thetas, circle=False, preserve_range=True)
         error = np.sqrt(np.power(np.linalg.norm(projections - self.sinogram), 2)/(projections.shape[0] * projections.shape[1]))
+        error = error + (np.sqrt(np.power(np.linalg.norm(projections - self.lbp(self.sinogram)), 2)/(projections.shape[0] * projections.shape[1]))*self.lamb)
         return error
 
     def iteration(self):
@@ -135,7 +136,7 @@ def process(task_queue: mp.Queue, progress_queue: mp.Queue):
     while True:
         try:
             file: str
-            file, seed, k, n, t_0 = task_queue.get(block=True, timeout=0.5)
+            file, seed, k, n, t_0, l = task_queue.get(block=True, timeout=0.5)
             # logging.info(f"File: {file}, seed: {seed}, k: {k}, n: {n}, t0: {t_0}")
         except Empty:
             break
@@ -146,7 +147,7 @@ def process(task_queue: mp.Queue, progress_queue: mp.Queue):
         img[img == 1] = 255
         sinogram = radon(img, theta=theta, circle=False, preserve_range=True)
 
-        sa = SA(sinogram=sinogram, thetas=theta, N=n, t_0=t_0, t_n=0)
+        sa = SA(sinogram=sinogram, thetas=theta, N=n, t_0=t_0, t_n=0, l=l)
         sa.iteration()
 
         # images
@@ -227,6 +228,7 @@ if __name__ == "__main__":
     thetas = [1, 10, 30]
     ns = [10, 100, 1000, 5000, 10000, 50000, 100000]
     t0s = [1, 5, 10, 50, 100, 250, 500]
+    lamb = [0.1,0.5,1]
 
 
     inputs = []
@@ -237,8 +239,9 @@ if __name__ == "__main__":
             for k in thetas:
                 for n in ns:
                     for t0 in t0s:
-                        task_queue.put((file, seed, k, n, t0))
-                        inputs.append([task_queue, progress_queue])
+                        for l in lamb:
+                            task_queue.put((file, seed, k, n, t0, l))
+                            inputs.append([task_queue, progress_queue])
 
     progress = mp.Process(target=_progress_bar, args=(progress_queue, task_queue.qsize()))
     progress.start()
